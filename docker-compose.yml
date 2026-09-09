@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  ai-service:
+    build:
+      context: ./ai-engine
+    container_name: falci-ai-engine
+    environment:
+      - OLLAMA_URL=http://host.docker.internal:11434/api/generate
+      - MODEL_NAME=llava:7b
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - falci-net
+    restart: unless-stopped
+
+  gateway-service:
+    build:
+      context: ./gateway
+    container_name: falci-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - AI_SERVICE_URL=http://ai-service:5001/predict
+    volumes:
+      - shared-audio:/shared/audio
+    networks:
+      - falci-net
+    depends_on:
+      - ai-service
+    restart: unless-stopped
+
+networks:
+  falci-net:
+    driver: bridge
+
+volumes:
+  shared-audio:
