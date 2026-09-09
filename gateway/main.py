@@ -1,78 +1,148 @@
+import asyncio
 import os
+import re
+import time
 import uuid
-import httpx
+from contextlib import asynccontextmanager
+from typing import Optional
+
 import edge_tts
+import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="Falcı API Gateway", version="1.0.0")
-
-# Statik dosyalar için mount
-if os.path.exists("static"):
-    app.mount("/static", StaticFiles(directory="static"), name="static")
-
 AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://falci-ai-engine:8000/predict")
 AUDIO_STORAGE_DIR = os.getenv("AUDIO_STORAGE_DIR", "/shared/audio")
 VOICE = "tr-TR-EmelNeural"
+AUDIO_TTL_SEC = int(os.getenv("AUDIO_TTL_SEC", "180"))
+SAFE_AUDIO_NAME = re.compile(r"^[a-f0-9]{32}\.mp3$")
 
-os.makedirs(AUDIO_STORAGE_DIR, exist_ok=True)
+http_client: Optional[httpx.AsyncClient] = None
+state_lock = asyncio.Lock()
+is_busy = False
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    global http_client
+    os.makedirs(AUDIO_STORAGE_DIR, exist_ok=True)
+    http_client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0))
+    yield
+    await http_client.aclose()
+    http_client = None
+
+
+app = FastAPI(title="Falcı API Gateway", version="1.1.0", lifespan=lifespan, docs_url=None, redoc_url=None)
+
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+class FaceFeatures(BaseModel):
+    face_shape: str = ""
+    forehead: str = ""
+    eye_spacing: str = ""
+    nose: str = ""
+    mouth: str = ""
+    jaw: str = ""
+    expression: str = ""
+    gaze: str = ""
+
 
 class FortuneRequest(BaseModel):
-    image_base64: str = Field(..., description="JPEG base64 encoded string")
+    image_base64: str = Field(..., min_length=32, max_length=700_000)
+    face_features: Optional[FaceFeatures] = None
+
 
 class FortuneResponse(BaseModel):
     reading: str
     audio_url: str
 
+
+def _purge_old_audio() -> None:
+    now = time.time()
+    try:
+        names = os.listdir(AUDIO_STORAGE_DIR)
+    except OSError:
+        return
+    for name in names:
+        if not name.endswith(".mp3"):
+            continue
+        path = os.path.join(AUDIO_STORAGE_DIR, name)
+        try:
+            if now - os.path.getmtime(path) > AUDIO_TTL_SEC:
+                os.remove(path)
+        except OSError:
+            pass
+
+
 @app.get("/")
 async def root():
     return FileResponse("static/index.html")
 
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 @app.post("/api/v1/fortune", response_model=FortuneResponse)
 async def handle_fortune(payload: FortuneRequest):
-    if not payload.image_base64:
-        raise HTTPException(status_code=400, detail="Görsel verisi boş olamaz.")
-
-    # 1. AI Servisine ilet
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        try:
-            ai_res = await client.post(
-                AI_SERVICE_URL,
-                json={"image_base64": payload.image_base64}
-            )
-        except httpx.ConnectError:
-            raise HTTPException(status_code=503, detail="AI servisine bağlanılamadı.")
-        except httpx.ReadTimeout:
-            raise HTTPException(status_code=504, detail="AI servisi zaman aşımına uğradı.")
-
-    if ai_res.status_code != 200:
-        raise HTTPException(status_code=ai_res.status_code, detail=f"AI Engine Hatası: {ai_res.text}")
-
-    reading_text = ai_res.json().get("reading", "").strip()
-    if not reading_text:
-        raise HTTPException(status_code=500, detail="Model boş çıktı üretti.")
-
-    # 2. TTS ile MP3 üret
-    file_id = f"{uuid.uuid4().hex}"
-    audio_filename = f"{file_id}.mp3"
-    audio_path = os.path.join(AUDIO_STORAGE_DIR, audio_filename)
+    global is_busy
+    async with state_lock:
+        if is_busy:
+            raise HTTPException(status_code=429, detail="Falcı birine bakıyor, sıranı bekle.")
+        is_busy = True
 
     try:
-        communicator = edge_tts.Communicate(reading_text, VOICE)
-        await communicator.save(audio_path)
-    except Exception as e:
-        print(f"TTS Hatası: {e}", flush=True)
-        return FortuneResponse(reading=reading_text, audio_url="")
+        _purge_old_audio()
 
-    return FortuneResponse(
-        reading=reading_text,
-        audio_url=f"/api/v1/audio/{audio_filename}"
-    )
+        body = {"image_base64": payload.image_base64}
+        if payload.face_features is not None:
+            body["face_features"] = payload.face_features.model_dump()
+
+        try:
+            ai_res = await http_client.post(AI_SERVICE_URL, json=body)
+        except httpx.ConnectError:
+            raise HTTPException(status_code=503, detail="Falcı henüz uyanmadı, birkaç saniye sonra dene.")
+        except httpx.ReadTimeout:
+            raise HTTPException(status_code=504, detail="Falcı uzattı, bir daha dene.")
+
+        if ai_res.status_code != 200:
+            raise HTTPException(status_code=502, detail="Falcı şu an dalgın, bir daha dene.")
+
+        try:
+            reading_text = (ai_res.json().get("reading") or "").strip()
+        except Exception:
+            raise HTTPException(status_code=502, detail="Falcı şu an dalgın, bir daha dene.")
+
+        if not reading_text:
+            raise HTTPException(status_code=502, detail="Falcı mırıldandı, bir daha dene.")
+
+        audio_filename = f"{uuid.uuid4().hex}.mp3"
+        audio_path = os.path.join(AUDIO_STORAGE_DIR, audio_filename)
+
+        try:
+            communicator = edge_tts.Communicate(reading_text, VOICE)
+            await communicator.save(audio_path)
+        except Exception as exc:
+            print(f"TTS Hatası: {exc}", flush=True)
+            return FortuneResponse(reading=reading_text, audio_url="")
+
+        return FortuneResponse(
+            reading=reading_text,
+            audio_url=f"/api/v1/audio/{audio_filename}",
+        )
+    finally:
+        is_busy = False
+
 
 @app.get("/api/v1/audio/{filename}")
 async def stream_audio(filename: str):
+    if not SAFE_AUDIO_NAME.fullmatch(filename):
+        raise HTTPException(status_code=404, detail="Ses dosyası bulunamadı.")
     file_path = os.path.join(AUDIO_STORAGE_DIR, filename)
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Ses dosyası bulunamadı.")

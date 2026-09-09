@@ -2,58 +2,289 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mistik Falcı - Gateway</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Mistik Yüz Falcısı</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0c0d14; color: #e2e8f0; display: flex; justify-content: center; padding: 30px 15px; }
+        html, body { height: 100%; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #0c0d14;
+            color: #e2e8f0;
+            display: flex;
+            justify-content: center;
+            padding: 18px 14px 24px;
+        }
         .wrapper { width: 100%; max-width: 580px; text-align: center; }
-        h1 { font-size: 1.6rem; margin-bottom: 20px; color: #d946ef; letter-spacing: -0.5px; }
-        .video-box { position: relative; border-radius: 12px; overflow: hidden; background: #181926; border: 1px solid #2d2f45; aspect-ratio: 4/3; }
-        video { width: 100%; height: 100%; object-fit: cover; }
-        button { margin-top: 18px; width: 100%; padding: 14px; border-radius: 8px; border: none; background: #a855f7; color: white; font-weight: 600; font-size: 1rem; cursor: pointer; transition: 0.2s ease; }
+        h1 { font-size: 1.55rem; margin-bottom: 6px; color: #e879f9; letter-spacing: -0.4px; }
+        .sub { color: #94a3b8; font-size: 0.88rem; margin-bottom: 16px; }
+        .video-box {
+            position: relative;
+            border-radius: 14px;
+            overflow: hidden;
+            background: #181926;
+            border: 1px solid #2d2f45;
+            aspect-ratio: 4/3;
+        }
+        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        .guide {
+            position: absolute;
+            inset: 10% 18%;
+            border: 2px dashed rgba(232, 121, 249, 0.45);
+            border-radius: 46% 46% 42% 42%;
+            pointer-events: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .guide.locked {
+            border-style: solid;
+            border-color: #34d399;
+            box-shadow: 0 0 0 999px rgba(12, 13, 20, 0.28) inset;
+        }
+        .badge {
+            position: absolute;
+            left: 10px;
+            bottom: 10px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            background: rgba(24, 25, 38, 0.88);
+            color: #fbbf24;
+        }
+        .badge.ok { color: #34d399; }
+        button {
+            margin-top: 16px;
+            width: 100%;
+            padding: 16px;
+            border-radius: 10px;
+            border: none;
+            background: #a855f7;
+            color: white;
+            font-weight: 700;
+            font-size: 1.05rem;
+            cursor: pointer;
+        }
         button:hover { background: #9333ea; }
-        button:disabled { background: #3b3d54; cursor: not-allowed; opacity: 0.7; }
-        .status { margin-top: 15px; font-size: 0.95rem; min-height: 24px; color: #a855f7; }
-        .output { margin-top: 20px; text-align: left; background: #141522; padding: 20px; border-radius: 10px; border: 1px solid #282a3e; line-height: 1.7; font-size: 0.95rem; white-space: pre-wrap; min-height: 80px; }
+        button:disabled { background: #3b3d54; cursor: not-allowed; opacity: 0.75; }
+        .status { margin-top: 12px; font-size: 0.95rem; min-height: 22px; color: #c084fc; }
+        .output {
+            margin-top: 16px;
+            text-align: left;
+            background: #141522;
+            padding: 18px;
+            border-radius: 10px;
+            border: 1px solid #282a3e;
+            line-height: 1.7;
+            font-size: 0.95rem;
+            white-space: pre-wrap;
+            min-height: 88px;
+        }
     </style>
 </head>
 <body>
     <div class="wrapper">
         <h1>Mistik Yüz Falcısı</h1>
+        <p class="sub">Yüzünü çerçevenin içine al, hatların okunsun.</p>
         <div class="video-box">
             <video id="webcam" autoplay playsinline muted></video>
+            <div id="guide" class="guide"></div>
+            <div id="badge" class="badge">Kamera açılıyor...</div>
         </div>
-        <button id="action-btn" onclick="captureAndSend()">Falıma Bak</button>
+        <button id="action-btn" onclick="captureAndSend()" disabled>Yüzünü göster</button>
         <div id="status-bar" class="status"></div>
-        <div id="result-box" class="output">Kameraya dik bak ve butona tıkla...</div>
-        
+        <div id="result-box" class="output">Sıradaki: çerçevenin içine gir, yeşil olunca falına bak.</div>
         <audio id="tts-player" style="display: none;"></audio>
         <canvas id="snapshot" style="display: none;"></canvas>
     </div>
 
     <script>
-        const video = document.getElementById('webcam');
-        const canvas = document.getElementById('snapshot');
-        const btn = document.getElementById('action-btn');
-        const statusEl = document.getElementById('status-bar');
-        const resultEl = document.getElementById('result-box');
-        const audio = document.getElementById('tts-player');
+        const video = document.getElementById("webcam");
+        const canvas = document.getElementById("snapshot");
+        const btn = document.getElementById("action-btn");
+        const statusEl = document.getElementById("status-bar");
+        const resultEl = document.getElementById("result-box");
+        const audio = document.getElementById("tts-player");
+        const guide = document.getElementById("guide");
+        const badge = document.getElementById("badge");
 
-        navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false })
-            .then(stream => { video.srcObject = stream; })
-            .catch(err => { resultEl.innerText = "Kamera erişim izni verilmedi: " + err.message; });
+        let faceLandmarker = null;
+        let cameraReady = false;
+        let busy = false;
+        let lastLock = null;
+        let lastLockAt = 0;
+        let rafId = 0;
+
+        function dist(a, b) {
+            return Math.hypot(a.x - b.x, a.y - b.y);
+        }
+
+        function band(value, low, high, labels) {
+            if (value < low) return labels[0];
+            if (value > high) return labels[2];
+            return labels[1];
+        }
+
+        // MediaPipe Face Mesh indeksleri: stand'da Gemini'ye "uydurma yüz" değil, ölçülmüş hat gitsin diye.
+        function describeFace(lm) {
+            const top = lm[10], chin = lm[152], left = lm[234], right = lm[454];
+            if (!top || !chin || !left || !right) return null;
+
+            const faceH = dist(top, chin);
+            const faceW = dist(left, right);
+            if (faceW < 0.22 || faceH < 0.28) {
+                return { ok: false, reason: "Biraz yaklaş" };
+            }
+            if (faceW > 0.72) {
+                return { ok: false, reason: "Biraz uzaklaş" };
+            }
+
+            const eyeL = lm[33], eyeR = lm[263], eyeInnerL = lm[133], eyeInnerR = lm[362];
+            const browL = lm[70], browR = lm[300];
+            const noseL = lm[98], noseR = lm[327];
+            const mouthL = lm[61], mouthR = lm[291], lipTop = lm[13], lipBot = lm[14];
+            const jawL = lm[172], jawR = lm[397];
+            const noseTip = lm[1];
+
+            const eyeMidX = (eyeL.x + eyeR.x) / 2;
+            const yaw = Math.abs(noseTip.x - eyeMidX) / faceW;
+            if (yaw > 0.08) {
+                return { ok: false, reason: "Kameraya dön" };
+            }
+
+            const browY = (browL.y + browR.y) / 2;
+            const foreheadRatio = Math.abs(browY - top.y) / faceH;
+            const mouthCenterY = (lipTop.y + lipBot.y) / 2;
+            const smile = ((mouthL.y + mouthR.y) / 2) - mouthCenterY;
+
+            return {
+                ok: true,
+                features: {
+                    face_shape: band(faceH / faceW, 1.18, 1.38, ["yuvarlak", "oval", "uzun"]),
+                    forehead: band(foreheadRatio, 0.18, 0.26, ["alçak alın", "orta alın", "geniş alın"]),
+                    eye_spacing: band(dist(eyeInnerL, eyeInnerR) / faceW, 0.24, 0.30, ["yakın bakışlı", "dengeli göz aralığı", "geniş bakışlı"]),
+                    nose: band(dist(noseL, noseR) / faceW, 0.16, 0.22, ["ince burun", "dengeli burun", "geniş burun"]),
+                    mouth: band(dist(mouthL, mouthR) / faceW, 0.30, 0.38, ["küçük ağız", "dengeli ağız", "geniş ağız"]),
+                    jaw: band(dist(jawL, jawR) / faceW, 0.62, 0.74, ["sivri çene", "dengeli çene", "geniş çene"]),
+                    expression: smile < -0.004 ? "hafif gülümseme" : "nötr ifade",
+                    gaze: "kameraya bakıyor",
+                },
+            };
+        }
+
+        function setLock(state, message) {
+            badge.textContent = message;
+            badge.classList.toggle("ok", state === "ok");
+            guide.classList.toggle("locked", state === "ok");
+            if (!busy) {
+                btn.disabled = state !== "ok";
+                btn.textContent = state === "ok" ? "Falıma Bak" : "Yüzünü göster";
+            }
+        }
+
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+                    audio: false,
+                });
+                video.srcObject = stream;
+                await video.play();
+                cameraReady = true;
+                setLock("wait", "Yüzünü çerçevenin içine al");
+            } catch (err) {
+                resultEl.innerText = "Kamera açılmadı: " + err.message;
+                setLock("wait", "Kamera yok");
+            }
+        }
+
+        async function initLandmarker() {
+            if (cameraReady) setLock("wait", "Yüz okuyucu yükleniyor...");
+            try {
+                const vision = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm");
+                const fileset = await vision.FilesetResolver.forVisionTasks(
+                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+                );
+                faceLandmarker = await vision.FaceLandmarker.createFromOptions(fileset, {
+                    baseOptions: {
+                        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+                        delegate: "GPU",
+                    },
+                    runningMode: "VIDEO",
+                    numFaces: 1,
+                });
+            } catch (err) {
+                console.warn("GPU landmarker olmadı, CPU deneniyor", err);
+                try {
+                    const vision = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm");
+                    const fileset = await vision.FilesetResolver.forVisionTasks(
+                        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+                    );
+                    faceLandmarker = await vision.FaceLandmarker.createFromOptions(fileset, {
+                        baseOptions: {
+                            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+                            delegate: "CPU",
+                        },
+                        runningMode: "VIDEO",
+                        numFaces: 1,
+                    });
+                } catch (err2) {
+                    console.warn("Yüz ölçümü yüklenemedi, kare yine gider", err2);
+                    faceLandmarker = null;
+                    if (cameraReady) {
+                        setLock("ok", "Kamera hazır (ölçüm yok)");
+                    }
+                }
+            }
+        }
+
+        function trackFace() {
+            if (!faceLandmarker || video.readyState < 2) {
+                rafId = requestAnimationFrame(trackFace);
+                return;
+            }
+            try {
+                const result = faceLandmarker.detectForVideo(video, performance.now());
+                const lm = result.faceLandmarks && result.faceLandmarks[0];
+                if (!lm) {
+                    lastLock = null;
+                    setLock("wait", "Yüzünü çerçevenin içine al");
+                } else {
+                    const reading = describeFace(lm);
+                    if (!reading) {
+                        lastLock = null;
+                        setLock("wait", "Yüzünü çerçevenin içine al");
+                    } else if (!reading.ok) {
+                        lastLock = null;
+                        setLock("wait", reading.reason);
+                    } else {
+                        lastLock = reading.features;
+                        lastLockAt = Date.now();
+                        setLock("ok", "Hatlar okundu");
+                    }
+                }
+            } catch (err) {
+                console.warn(err);
+            }
+            rafId = requestAnimationFrame(trackFace);
+        }
 
         async function captureAndSend() {
+            if (busy || !cameraReady) return;
+            const featuresFresh = lastLock && (Date.now() - lastLockAt < 700);
+            if (faceLandmarker && !featuresFresh) {
+                statusEl.innerText = "Önce yüzünü kilitle.";
+                return;
+            }
+
+            busy = true;
             btn.disabled = true;
-            statusEl.innerText = "Falcı auranı inceliyor (hızlı okuma modunda)...";
+            btn.textContent = "Bakılıyor...";
+            statusEl.innerText = "Alın, kaş, göz, burun, ağız, çene...";
             resultEl.innerText = "";
 
-            // Hızlı işleme için görseli maksimum 448px'e sınırla
             const MAX_DIM = 448;
             let w = video.videoWidth || 640;
             let h = video.videoHeight || 480;
-
             if (w > h) {
                 canvas.width = MAX_DIM;
                 canvas.height = Math.round((h / w) * MAX_DIM);
@@ -62,36 +293,56 @@
                 canvas.width = Math.round((w / h) * MAX_DIM);
             }
 
-            const ctx = canvas.getContext('2d');
+            const ctx = canvas.getContext("2d");
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-            // Kalite 0.70 - Görsel token üretimini hafifletir
-            const base64Data = canvas.toDataURL('image/jpeg', 0.70).split(',')[1];
+            const base64Data = canvas.toDataURL("image/jpeg", 0.70).split(",")[1];
+            const payload = { image_base64: base64Data };
+            if (featuresFresh) payload.face_features = lastLock;
 
             try {
-                const response = await fetch('/api/v1/fortune', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image_base64: base64Data })
+                const response = await fetch("/api/v1/fortune", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
                 });
 
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.detail || "Sunucu hatası.");
+                let data = {};
+                try {
+                    data = await response.json();
+                } catch (_) {
+                    throw new Error("Sunucu cevap vermedi.");
+                }
+                if (!response.ok) {
+                    const detail = data.detail;
+                    throw new Error(typeof detail === "string" ? detail : "Sunucu hatası.");
+                }
 
                 statusEl.innerText = "";
                 resultEl.innerText = data.reading;
-
                 if (data.audio_url) {
-                    audio.src = data.audio_url + '?t=' + Date.now();
-                    audio.play();
+                    audio.src = data.audio_url + "?t=" + Date.now();
+                    try { await audio.play(); } catch (_) { /* stand tableti sessiz kalabilir */ }
                 }
             } catch (err) {
                 statusEl.innerText = "";
                 resultEl.innerText = "Hata: " + err.message;
             } finally {
-                btn.disabled = false;
+                busy = false;
+                const ready = Boolean(lastLock && Date.now() - lastLockAt < 700) || !faceLandmarker;
+                btn.disabled = !ready;
+                btn.textContent = ready ? "Falıma Bak" : "Yüzünü göster";
             }
         }
+
+        initCamera().then(initLandmarker).then(() => {
+            if (faceLandmarker) trackFace();
+        });
+
+        window.addEventListener("beforeunload", () => {
+            cancelAnimationFrame(rafId);
+            const stream = video.srcObject;
+            if (stream) stream.getTracks().forEach((t) => t.stop());
+        });
     </script>
 </body>
 </html>

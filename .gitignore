@@ -1,2 +1,4 @@
 venv/
 .env
+ai-engine/__pycache__/
+gateway/__pycache__/
