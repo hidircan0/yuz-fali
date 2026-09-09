@@ -6,8 +6,7 @@ services:
       context: ./ai-engine
     container_name: falci-ai-engine
     environment:
-      - OLLAMA_URL=http://host.docker.internal:11434/api/generate
-      - MODEL_NAME=llava:7b
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -19,9 +18,9 @@ services:
       context: ./gateway
     container_name: falci-gateway
     ports:
-      - "8000:8000"
+      - "39842:8000"
     environment:
-      - AI_SERVICE_URL=http://ai-service:5001/predict
+      - AI_SERVICE_URL=http://falci-ai-engine:8000/predict
     volumes:
       - shared-audio:/shared/audio
     networks:

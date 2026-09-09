@@ -9,14 +9,15 @@ from pydantic import BaseModel, Field
 
 app = FastAPI(title="Falcı API Gateway", version="1.0.0")
 
-AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://ai-service:5001/predict")
+# Statik dosyalar için mount
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+
+AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://falci-ai-engine:8000/predict")
 AUDIO_STORAGE_DIR = os.getenv("AUDIO_STORAGE_DIR", "/shared/audio")
 VOICE = "tr-TR-EmelNeural"
 
 os.makedirs(AUDIO_STORAGE_DIR, exist_ok=True)
-
-# Statik arayüz dosyasını ana dizine bağla
-app.mount("/app", StaticFiles(directory="static", html=True), name="static")
 
 class FortuneRequest(BaseModel):
     image_base64: str = Field(..., description="JPEG base64 encoded string")
@@ -27,7 +28,6 @@ class FortuneResponse(BaseModel):
 
 @app.get("/")
 async def root():
-    # Doğrudan arayüze yönlendir
     return FileResponse("static/index.html")
 
 @app.post("/api/v1/fortune", response_model=FortuneResponse)
@@ -35,17 +35,17 @@ async def handle_fortune(payload: FortuneRequest):
     if not payload.image_base64:
         raise HTTPException(status_code=400, detail="Görsel verisi boş olamaz.")
 
-    # 1. AI Servisine (ai-service:5001) proxy yap
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    # 1. AI Servisine ilet
+    async with httpx.AsyncClient(timeout=60.0) as client:
         try:
             ai_res = await client.post(
                 AI_SERVICE_URL,
                 json={"image_base64": payload.image_base64}
             )
         except httpx.ConnectError:
-            raise HTTPException(status_code=503, detail="AI servisine bağlanılamadı. Servisin ayakta olduğundan emin olun.")
+            raise HTTPException(status_code=503, detail="AI servisine bağlanılamadı.")
         except httpx.ReadTimeout:
-            raise HTTPException(status_code=504, detail="AI servisi zaman aşımına uğradı (model yanıt vermedi).")
+            raise HTTPException(status_code=504, detail="AI servisi zaman aşımına uğradı.")
 
     if ai_res.status_code != 200:
         raise HTTPException(status_code=ai_res.status_code, detail=f"AI Engine Hatası: {ai_res.text}")
@@ -54,7 +54,7 @@ async def handle_fortune(payload: FortuneRequest):
     if not reading_text:
         raise HTTPException(status_code=500, detail="Model boş çıktı üretti.")
 
-    # 2. TTS ile sesi paylaşılan volume'e kaydet
+    # 2. TTS ile MP3 üret
     file_id = f"{uuid.uuid4().hex}"
     audio_filename = f"{file_id}.mp3"
     audio_path = os.path.join(AUDIO_STORAGE_DIR, audio_filename)
@@ -63,7 +63,7 @@ async def handle_fortune(payload: FortuneRequest):
         communicator = edge_tts.Communicate(reading_text, VOICE)
         await communicator.save(audio_path)
     except Exception as e:
-        # TTS patlasa bile fal metnini kullanıcıya döndür
+        print(f"TTS Hatası: {e}", flush=True)
         return FortuneResponse(reading=reading_text, audio_url="")
 
     return FortuneResponse(

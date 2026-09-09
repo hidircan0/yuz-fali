@@ -40,24 +40,33 @@
         const resultEl = document.getElementById('result-box');
         const audio = document.getElementById('tts-player');
 
-        // Tarayıcıdan kamerayı başlat
-        navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false })
+        navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false })
             .then(stream => { video.srcObject = stream; })
             .catch(err => { resultEl.innerText = "Kamera erişim izni verilmedi: " + err.message; });
 
         async function captureAndSend() {
             btn.disabled = true;
-            statusEl.innerText = "Falcı auranı inceliyor, lütfen bekle...";
+            statusEl.innerText = "Falcı auranı inceliyor (hızlı okuma modunda)...";
             resultEl.innerText = "";
 
-            // Kareyi al
-            canvas.width = video.videoWidth || 640;
-            canvas.height = video.videoHeight || 480;
+            // Hızlı işleme için görseli maksimum 448px'e sınırla
+            const MAX_DIM = 448;
+            let w = video.videoWidth || 640;
+            let h = video.videoHeight || 480;
+
+            if (w > h) {
+                canvas.width = MAX_DIM;
+                canvas.height = Math.round((h / w) * MAX_DIM);
+            } else {
+                canvas.height = MAX_DIM;
+                canvas.width = Math.round((w / h) * MAX_DIM);
+            }
+
             const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            // JPEG Base64'e çevir
-            const base64Data = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+            // Kalite 0.70 - Görsel token üretimini hafifletir
+            const base64Data = canvas.toDataURL('image/jpeg', 0.70).split(',')[1];
 
             try {
                 const response = await fetch('/api/v1/fortune', {
