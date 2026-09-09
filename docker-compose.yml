@@ -5,7 +5,7 @@ services:
     container_name: falci-ai-engine
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.6-flash}
+      - GEMINI_MODEL=${GEMINI_MODEL}
     networks:
       - falci-net
     restart: unless-stopped

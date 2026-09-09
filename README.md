@@ -14,11 +14,6 @@ Proje kökünde `.env`:
 
 ```env
 GEMINI_API_KEY=your_key_here
-```
-
-İsteğe bağlı:
-
-```env
 GEMINI_MODEL=gemini-3.6-flash
 ```
 
